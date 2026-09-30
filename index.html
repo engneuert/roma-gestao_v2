@@ -61,7 +61,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px so
 <div class="panel"><h3>Trabalho</h3><div id="workState" class="muted"></div><div class="actions"><button id="bStart" class="btn ok" onclick="startWork()">Iniciar trabalho</button><button id="bPause" class="btn amber" onclick="pauseWork()">Pausar</button><button id="bResume" class="btn ok" onclick="resumeWork()">Retomar</button><button id="bFinishPart" class="btn primary" onclick="finishParticipation()">Concluir minha participação</button></div><div id="workMsg" class="msg"></div></div>
 <div class="panel"><h3>Fotos</h3><div class="grid"><label>Etapa<select id="photoStage"><option value="entrada">Entrada</option><option value="execucao" selected>Execução</option><option value="saida">Saída</option></select></label><label class="s2">Foto<input id="photoFile" type="file" accept="image/*" capture="environment"></label><label>Legenda<input id="photoCaption"></label></div><div class="actions"><button class="btn" onclick="uploadPhoto()">Enviar foto</button></div><div id="photos" class="photoGrid" style="margin-top:12px"></div></div>
 <div class="panel"><h3>Encerramento</h3><div class="grid"><label class="s2">Peças utilizadas<textarea id="mPecas"></textarea></label><label>Serviços de terceiros<input id="mTerceiros"></label><label>Pendências<input id="mPendencias"></label><label class="s2">Serviços realizados<textarea id="mRealizados"></textarea></label><label class="s2">Recomendações ao cliente<textarea id="mRecomendacoes"></textarea></label><label class="s4">Observações finais<textarea id="mObs"></textarea></label></div>
-<div class="actions"><button id="bSave" class="btn" onclick="saveOS()">Salvar OS</button><button id="bComplete" class="btn ok" onclick="completeOS()">Concluir OS</button><button id="bDeliver" class="btn ok" onclick="deliverOS()">Marcar entregue</button><button id="bReopen" class="btn danger" onclick="reopenOS()">Reabrir OS</button></div><div id="modalMsg" class="msg"></div></div>
+<div class="actions"><button id="bSaveService" class="btn" onclick="saveServiceInfo()">Salvar informações</button><button id="bSave" class="btn" onclick="saveOS()">Salvar OS</button><button id="bComplete" class="btn ok" onclick="completeOS()">Concluir OS</button><button id="bDeliver" class="btn ok" onclick="deliverOS()">Marcar entregue</button><button id="bReopen" class="btn danger" onclick="reopenOS()">Reabrir OS</button></div><div id="serviceMsg" class="msg"></div><div id="modalMsg" class="msg"></div></div>
 </div></div>
 
 <script>
@@ -184,7 +184,30 @@ async function finishParticipation(){
   }
 }
 async function refreshOS(){await loadAll();currentOS=orders.find(o=>String(o.id)===String(currentOS.id));await loadSession();$('mStatus').value=currentOS.status;applyRole()}
-function applyRole(){let manage=['administrador','operacional'].includes(me.perfil),closed=['concluido','entregue','cancelado'].includes(currentOS.status);$('mAdminFields').querySelectorAll('input,select,textarea').forEach(x=>x.disabled=!manage||closed);$('participantActions').style.display=manage&&!closed?'flex':'none';$('bSave').style.display=manage&&!closed?'inline-block':'none';$('bComplete').style.display=manage&&!closed?'inline-block':'none';$('bDeliver').style.display=manage&&currentOS.status==='concluido'?'inline-block':'none';$('bReopen').style.display=me.perfil==='administrador'&&['concluido','entregue'].includes(currentOS.status)?'inline-block':'none';let canWork=!closed&&(me.perfil==='mecanico'||manage);$('bStart').style.display=canWork&&!currentSession?'inline-block':'none';$('bPause').style.display=canWork&&currentSession?.status==='em_execucao'?'inline-block':'none';$('bResume').style.display=canWork&&currentSession?.status==='pausada'?'inline-block':'none';$('bFinishPart').style.display=canWork&&currentSession?'inline-block':'none'}
+function applyRole(){let manage=['administrador','operacional'].includes(me.perfil),closed=['concluido','entregue','cancelado'].includes(currentOS.status);$('mAdminFields').querySelectorAll('input,select,textarea').forEach(x=>x.disabled=!manage||closed);$('participantActions').style.display=manage&&!closed?'flex':'none';$('bSaveService').style.display=!closed&&(me.perfil==='mecanico'||manage)?'inline-block':'none';$('bSave').style.display=manage&&!closed?'inline-block':'none';$('bComplete').style.display=manage&&!closed?'inline-block':'none';$('bDeliver').style.display=manage&&currentOS.status==='concluido'?'inline-block':'none';$('bReopen').style.display=me.perfil==='administrador'&&['concluido','entregue'].includes(currentOS.status)?'inline-block':'none';let canWork=!closed&&(me.perfil==='mecanico'||manage);$('bStart').style.display=canWork&&!currentSession?'inline-block':'none';$('bPause').style.display=canWork&&currentSession?.status==='em_execucao'?'inline-block':'none';$('bResume').style.display=canWork&&currentSession?.status==='pausada'?'inline-block':'none';$('bFinishPart').style.display=canWork&&currentSession?'inline-block':'none'}
+async function saveServiceInfo(){
+  const b=$('bSaveService');
+  b.disabled=true;
+  msg('serviceMsg','Salvando informações...');
+  try{
+    await rpc('roma_salvar_informacoes_servico',{
+      p_os_id:currentOS.id,
+      p_pecas_utilizadas:$('mPecas').value||null,
+      p_terceiros:$('mTerceiros').value||null,
+      p_pendencias:$('mPendencias').value||null,
+      p_servicos_realizados:$('mRealizados').value||null,
+      p_recomendacoes_cliente:$('mRecomendacoes').value||null,
+      p_observacao:$('mObs').value||null
+    });
+    await loadAll();
+    currentOS=orders.find(o=>String(o.id)===String(currentOS.id));
+    msg('serviceMsg','Informações salvas.',true);
+  }catch(e){
+    msg('serviceMsg','Não foi possível salvar: '+e.message);
+  }finally{
+    b.disabled=false;
+  }
+}
 async function saveOS(){let emp=employees.find(e=>String(e.id)===String($('mResp').value));let p={colaborador_id:String(emp.id),colaborador_nome:emp.nome,data_entrada:$('mData').value,previsao_entrega:$('mPrev').value||null,cliente:$('mCliente').value||null,telefone:$('mTelefone').value||null,placa:$('mPlaca').value.toUpperCase()||null,veiculo:$('mVeiculo').value||null,km:$('mKm').value?Number($('mKm').value):null,cor:$('mCor').value||null,servico_solicitado:$('mServico').value||null,relato_cliente:$('mRelato').value||null,pecas_utilizadas:$('mPecas').value||null,terceiros:$('mTerceiros').value||null,pendencias:$('mPendencias').value||null,servicos_realizados:$('mRealizados').value||null,recomendacoes_cliente:$('mRecomendacoes').value||null,observacao:$('mObs').value||null};let r=await sb.from('roma_os').update(p).eq('id',currentOS.id);if(r.error)return msg('modalMsg',r.error.message);await saveParticipants();await loadAll();msg('modalMsg','OS salva.',true)}
 async function completeOS(){try{await saveOS();await rpc('roma_concluir_os',{p_os_id:currentOS.id});await loadAll();closeModal();showView('kanban')}catch(e){msg('modalMsg',e.message)}}
 async function deliverOS(){try{await rpc('roma_entregar_os',{p_os_id:currentOS.id});await loadAll();closeModal();showView('kanban')}catch(e){msg('modalMsg',e.message)}}
