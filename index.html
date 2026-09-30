@@ -33,7 +33,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px so
 <label>Data de entrada<input id="fData" type="date"></label><label>Previsão<input id="fPrev" type="date"></label><label class="s2">Responsável principal<select id="fResp"></select></label>
 <label class="s2">Cliente<input id="fCliente"></label><label>Telefone<input id="fTelefone"></label><label>Placa<input id="fPlaca"></label><label class="s2">Veículo / modelo<input id="fVeiculo"></label><label>KM<input id="fKm" type="number"></label><label>Cor<input id="fCor"></label>
 <label>Prioridade<select id="fPrioridade"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></label>
-<label class="s2">Serviço solicitado<input id="fServico"></label><label class="s2">Relato do cliente<textarea id="fRelato"></textarea></label></div><div class="actions"><button class="btn primary" onclick="createOS()">Criar OS</button><button class="btn" onclick="showView(me?.perfil==='mecanico'?'minhas':'kanban')">Cancelar</button></div><div id="formMsg" class="msg"></div></div></section>
+<label class="s2">Serviço solicitado<input id="fServico"></label><label class="s2">Relato do cliente<textarea id="fRelato"></textarea></label></div><div class="actions"><button id="bCreateOS" class="btn primary" onclick="createOS()">Criar OS</button><button class="btn" onclick="showView(me?.perfil==='mecanico'?'minhas':'kanban')">Cancelar</button></div><div id="formMsg" class="msg"></div></div></section>
 <section id="view-historico" class="view"><h2>Histórico</h2><div class="panel"><div id="history"></div></div></section>
 <section id="view-indicadores" class="view"><h2>Indicadores</h2><div class="kpis"><div class="kpi">Meta da equipe<b id="kMeta">0h</b></div><div class="kpi">Realizado<b id="kReal">0h</b></div><div class="kpi">Atingimento<b id="kPct">0%</b></div><div class="kpi">Faltam<b id="kFalta">0h</b></div></div><div class="panel" style="margin-top:12px"><div id="empIndicators"></div></div></section>
 <section id="view-admin" class="view"><h2>Administração</h2>
@@ -59,6 +59,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px so
 <div class="panel"><h3>Participantes</h3><div id="participants"></div><div id="participantActions" class="actions"><button class="btn" onclick="saveParticipants()">Salvar participantes</button></div></div>
 <div class="panel"><h3>Checklist digital de entrada</h3><div id="checklist"></div><div class="actions"><button class="btn" onclick="saveChecklist()">Salvar checklist</button></div></div>
 <div class="panel"><h3>Trabalho</h3><div id="workState" class="muted"></div><div class="actions"><button id="bStart" class="btn ok" onclick="startWork()">Iniciar trabalho</button><button id="bPause" class="btn amber" onclick="pauseWork()">Pausar</button><button id="bResume" class="btn ok" onclick="resumeWork()">Retomar</button><button id="bFinishPart" class="btn primary" onclick="finishParticipation()">Concluir minha participação</button></div><div id="workMsg" class="msg"></div></div>
+<div class="panel"><h3>Histórico de trabalho</h3><div id="workHistory" class="muted">Nenhum registro.</div></div>
 <div class="panel"><h3>Fotos</h3><div class="grid"><label>Etapa<select id="photoStage"><option value="entrada">Entrada</option><option value="execucao" selected>Execução</option><option value="saida">Saída</option></select></label><label class="s2">Foto<input id="photoFile" type="file" accept="image/*" capture="environment"></label><label>Legenda<input id="photoCaption"></label></div><div class="actions"><button class="btn" onclick="uploadPhoto()">Enviar foto</button></div><div id="photos" class="photoGrid" style="margin-top:12px"></div></div>
 <div class="panel"><h3>Encerramento</h3><div class="grid"><label class="s2">Peças utilizadas<textarea id="mPecas"></textarea></label><label>Serviços de terceiros<input id="mTerceiros"></label><label>Pendências<input id="mPendencias"></label><label class="s2">Serviços realizados<textarea id="mRealizados"></textarea></label><label class="s2">Recomendações ao cliente<textarea id="mRecomendacoes"></textarea></label><label class="s4">Observações finais<textarea id="mObs"></textarea></label></div>
 <div class="actions"><button id="bSaveService" class="btn" onclick="saveServiceInfo()">Salvar informações</button><button id="bSave" class="btn" onclick="saveOS()">Salvar OS</button><button id="bComplete" class="btn ok" onclick="completeOS()">Concluir OS</button><button id="bDeliver" class="btn ok" onclick="deliverOS()">Marcar entregue</button><button id="bReopen" class="btn danger" onclick="reopenOS()">Reabrir OS</button></div><div id="serviceMsg" class="msg"></div><div id="modalMsg" class="msg"></div></div>
@@ -68,7 +69,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px so
 const SUPABASE_URL='https://mzufgpwxkjgwccjlrtuo.supabase.co';
 const SUPABASE_KEY='sb_publishable_5F6RHR3uVVrej65n7YE9nQ_4DbIBQDQ';
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-let me=null,employees=[],orders=[],participants=[],currentOS=null,currentSession=null,users=[];
+let me=null,employees=[],orders=[],participants=[],currentOS=null,currentSession=null,users=[],newOSToken=null;
 const $=id=>document.getElementById(id), esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const today=()=>new Date().toLocaleDateString('en-CA'), br=x=>x?x.split('-').reverse().join('/'):'';
 function msg(id,t,ok=false){$(id).textContent=t;$(id).style.color=ok?'#67db9a':'#ff8d8d'}
@@ -119,6 +120,7 @@ async function loadAll(){let [e,o,p]=await Promise.all([sb.from('roma_colaborado
 function fillEmployees(){let opts='<option value="">Selecione...</option>'+employees.filter(x=>x.ativo!==false).map(x=>`<option value="${x.id}">${esc(x.nome)}</option>`).join('');$('fResp').innerHTML=opts;$('mResp').innerHTML=opts}
 function newOS(){
   showView('nova');
+  newOSToken=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('roma-'+Date.now()+'-'+Math.random().toString(16).slice(2));
   $('fData').value=today();
   ['fPrev','fCliente','fTelefone','fPlaca','fVeiculo','fKm','fCor','fServico','fRelato'].forEach(x=>$(x).value='');
   $('fPrioridade').value='5';
@@ -132,61 +134,45 @@ function newOS(){
   msg('formMsg','');
 }
 async function createOS(){
+  const b=$('bCreateOS');
+  if(b?.disabled)return;
+  if(!newOSToken)newOSToken=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('roma-'+Date.now()+'-'+Math.random().toString(16).slice(2));
+  b.disabled=true;
   msg('formMsg','Criando OS...');
   try{
-    let created;
+    let respId=null;
     if(me.perfil==='mecanico'){
       if(!me.colaborador_id)throw new Error('Seu usuário não está vinculado a um colaborador.');
-      created=await rpc('roma_criar_os_mecanico',{
-        p_data_entrada:$('fData').value,
-        p_previsao_entrega:$('fPrev').value||null,
-        p_cliente:$('fCliente').value||null,
-        p_telefone:$('fTelefone').value||null,
-        p_placa:$('fPlaca').value||null,
-        p_veiculo:$('fVeiculo').value||null,
-        p_km:$('fKm').value?Number($('fKm').value):null,
-        p_cor:$('fCor').value||null,
-        p_servico_solicitado:$('fServico').value||null,
-        p_relato_cliente:$('fRelato').value||null,
-        p_prioridade:Number($('fPrioridade').value)
-      });
-      await seedChecklist(created.id);
-      await loadAll();
-      msg('formMsg','OS '+String(created.numero_os).padStart(4,'0')+' criada e atribuída a você.',true);
-      showView('minhas');
-      await openOS(created.id);
-      return;
+    }else{
+      let emp=employees.find(x=>String(x.id)===String($('fResp').value));
+      if(!emp)throw new Error('Selecione o responsável.');
+      respId=String(emp.id);
     }
-
-    let emp=employees.find(x=>String(x.id)===String($('fResp').value));
-    if(!emp)throw new Error('Selecione o responsável.');
-    let payload={
-      data_entrada:$('fData').value,
-      previsao_entrega:$('fPrev').value||null,
-      cliente:$('fCliente').value||null,
-      telefone:$('fTelefone').value||null,
-      placa:$('fPlaca').value.toUpperCase()||null,
-      veiculo:$('fVeiculo').value||null,
-      km:$('fKm').value?Number($('fKm').value):null,
-      cor:$('fCor').value||null,
-      servico_solicitado:$('fServico').value||null,
-      relato_cliente:$('fRelato').value||null,
-      prioridade:Number($('fPrioridade').value),
-      colaborador_id:String(emp.id),
-      colaborador_nome:emp.nome,
-      status:'aguardando'
-    };
-    let r=await sb.from('roma_os').insert(payload).select().single();
-    if(r.error)throw r.error;
-    let pr=await sb.from('roma_os_participantes').insert({
-      os_id:r.data.id,colaborador_id:String(emp.id),colaborador_nome:emp.nome,principal:true
+    const created=await rpc('roma_criar_os_v2',{
+      p_client_token:newOSToken,
+      p_colaborador_id:respId,
+      p_data_entrada:$('fData').value,
+      p_previsao_entrega:$('fPrev').value||null,
+      p_cliente:$('fCliente').value||null,
+      p_telefone:$('fTelefone').value||null,
+      p_placa:$('fPlaca').value||null,
+      p_veiculo:$('fVeiculo').value||null,
+      p_km:$('fKm').value?Number($('fKm').value):null,
+      p_cor:$('fCor').value||null,
+      p_servico_solicitado:$('fServico').value||null,
+      p_relato_cliente:$('fRelato').value||null,
+      p_prioridade:Number($('fPrioridade').value)
     });
-    if(pr.error)throw new Error('OS criada, mas participante: '+pr.error.message);
-    await seedChecklist(r.data.id);
     await loadAll();
-    showView('kanban');
+    msg('formMsg','OS '+String(created.numero_os).padStart(4,'0')+' criada com sucesso.',true);
+    const createdId=created.id;
+    newOSToken=null;
+    showView(me.perfil==='mecanico'?'minhas':'kanban');
+    if(me.perfil==='mecanico')await openOS(createdId);
   }catch(e){
     msg('formMsg','Não foi possível criar a OS: '+(e.message||String(e)));
+  }finally{
+    b.disabled=false;
   }
 }
 const checkItems=['Lataria / amassados','Arranhões / pintura','Para-choques','Rodas / calotas','Pneus / desgaste','Estepe / ferramentas','Vidros / para-brisa','Retrovisores','Faróis / lanternas','Luzes do painel','Interior / bancos','Objetos no veículo','Nível de combustível'];
@@ -194,11 +180,29 @@ async function seedChecklist(id){let ex=await sb.from('roma_os_checklist').selec
 function renderKanban(){let sts=[['aguardando','Aguardando'],['em_execucao','Em execução'],['pausado','Pausado / aguardando'],['concluido','Concluído']];$('kanban').innerHTML=sts.map(([st,n])=>{let a=orders.filter(o=>o.status===st||(st==='em_execucao'&&o.status==='execucao'));return `<div class="col"><h3>${n} <span>${a.length}</span></h3>${a.map(card).join('')||'<div class="muted">Nenhuma OS</div>'}</div>`}).join('')}
 function card(o){return `<div class="card" onclick="openOS(${o.id})"><b>OS ${String(o.numero_os).padStart(4,'0')}</b><div>${esc(o.placa||'Sem placa')} — ${esc(o.veiculo||'')}</div><div class="meta">${esc(o.servico_solicitado||o.relato_cliente||'')}</div><div class="meta">${esc(o.colaborador_nome||'Sem responsável')} · Entrada ${br(o.data_entrada)}</div></div>`}
 function renderMinhas(){let ids=new Set(participants.filter(p=>String(p.colaborador_id)===String(me.colaborador_id)).map(p=>String(p.os_id)));let a=orders.filter(o=>ids.has(String(o.id))&&!['entregue','cancelado'].includes(o.status));$('minhas').innerHTML=a.map(o=>`<div class="panel" onclick="openOS(${o.id})" style="cursor:pointer"><h3>OS ${String(o.numero_os).padStart(4,'0')} · ${esc(o.placa||'')}</h3><div>${esc(o.veiculo||'')}</div><div class="meta">${esc(o.servico_solicitado||'')}</div><div class="actions"><span class="pill">${o.status}</span></div></div>`).join('')||'<div class="panel muted">Nenhuma OS atribuída a você.</div>'}
-async function openOS(id){currentOS=orders.find(o=>String(o.id)===String(id));if(!currentOS)return;$('mTitle').textContent='OS '+String(currentOS.numero_os).padStart(4,'0');$('mSub').textContent=(currentOS.placa||'')+' — '+(currentOS.veiculo||'');$('mResp').value=String(currentOS.colaborador_id||'');$('mStatus').value=currentOS.status||'';$('mData').value=currentOS.data_entrada||'';$('mPrev').value=currentOS.previsao_entrega||'';$('mCliente').value=currentOS.cliente||'';$('mTelefone').value=currentOS.telefone||'';$('mPlaca').value=currentOS.placa||'';$('mVeiculo').value=currentOS.veiculo||'';$('mKm').value=currentOS.km??'';$('mCor').value=currentOS.cor||'';$('mServico').value=currentOS.servico_solicitado||'';$('mRelato').value=currentOS.relato_cliente||'';$('mPecas').value=currentOS.pecas_utilizadas||'';$('mTerceiros').value=currentOS.terceiros||'';$('mPendencias').value=currentOS.pendencias||'';$('mRealizados').value=currentOS.servicos_realizados||'';$('mRecomendacoes').value=currentOS.recomendacoes_cliente||'';$('mObs').value=currentOS.observacao||'';await Promise.all([loadParticipants(),loadChecklist(),loadSession(),loadPhotos()]);applyRole();msg('modalMsg','');$('osModal').classList.add('open')}
+async function openOS(id){currentOS=orders.find(o=>String(o.id)===String(id));if(!currentOS)return;$('mTitle').textContent='OS '+String(currentOS.numero_os).padStart(4,'0');$('mSub').textContent=(currentOS.placa||'')+' — '+(currentOS.veiculo||'');$('mResp').value=String(currentOS.colaborador_id||'');$('mStatus').value=currentOS.status||'';$('mData').value=currentOS.data_entrada||'';$('mPrev').value=currentOS.previsao_entrega||'';$('mCliente').value=currentOS.cliente||'';$('mTelefone').value=currentOS.telefone||'';$('mPlaca').value=currentOS.placa||'';$('mVeiculo').value=currentOS.veiculo||'';$('mKm').value=currentOS.km??'';$('mCor').value=currentOS.cor||'';$('mServico').value=currentOS.servico_solicitado||'';$('mRelato').value=currentOS.relato_cliente||'';$('mPecas').value=currentOS.pecas_utilizadas||'';$('mTerceiros').value=currentOS.terceiros||'';$('mPendencias').value=currentOS.pendencias||'';$('mRealizados').value=currentOS.servicos_realizados||'';$('mRecomendacoes').value=currentOS.recomendacoes_cliente||'';$('mObs').value=currentOS.observacao||'';await Promise.all([loadParticipants(),loadChecklist(),loadSession(),loadPhotos(),loadWorkHistory()]);applyRole();msg('modalMsg','');$('osModal').classList.add('open')}
 function closeModal(){$('osModal').classList.remove('open')}
 async function loadParticipants(){let r=await sb.from('roma_os_participantes').select('*').eq('os_id',currentOS.id);let rows=r.data||[];$('participants').innerHTML=employees.filter(e=>e.ativo!==false).map(e=>{let p=rows.find(x=>String(x.colaborador_id)===String(e.id));return `<label class="part"><input type="checkbox" class="pc" value="${e.id}" ${p?'checked':''} ${me.perfil==='mecanico'?'disabled':''}> ${esc(e.nome)} ${p?.principal?'<span class="pill">Principal</span>':''}</label>`}).join('')}
 async function saveParticipants(){if(!['administrador','operacional'].includes(me.perfil))return;let ids=[...document.querySelectorAll('.pc:checked')].map(x=>x.value),principal=String($('mResp').value);if(!ids.includes(principal))ids.push(principal);let del=await sb.from('roma_os_participantes').delete().eq('os_id',currentOS.id);if(del.error)return msg('modalMsg',del.error.message);let rows=ids.map(id=>{let e=employees.find(x=>String(x.id)===String(id));return {os_id:currentOS.id,colaborador_id:String(id),colaborador_nome:e.nome,principal:String(id)===principal}});let r=await sb.from('roma_os_participantes').insert(rows);if(r.error)return msg('modalMsg',r.error.message);await loadAll();msg('modalMsg','Participantes salvos.',true)}
-async function loadChecklist(){await seedChecklist(currentOS.id);let r=await sb.from('roma_os_checklist').select('*').eq('os_id',currentOS.id).order('id');$('checklist').innerHTML=(r.data||[]).map(x=>`<div class="checkrow" data-id="${x.id}"><b>${esc(x.item)}</b><select class="cs"><option value="pendente" ${x.situacao==='pendente'?'selected':''}>Pendente</option><option value="ok" ${x.situacao==='ok'?'selected':''}>OK</option><option value="avaria" ${x.situacao==='avaria'?'selected':''}>Avaria</option><option value="nao_aplica" ${x.situacao==='nao_aplica'?'selected':''}>Não se aplica</option></select><input class="co" placeholder="Observação" value="${esc(x.observacao||'')}"></div>`).join('')}
+async function loadChecklist(){
+  await seedChecklist(currentOS.id);
+  let r=await sb.from('roma_os_checklist').select('*').eq('os_id',currentOS.id).order('id');
+  $('checklist').innerHTML=(r.data||[]).map(x=>{
+    const fuel=x.item==='Nível de combustível';
+    const options=fuel
+      ? `<option value="pendente" ${x.situacao==='pendente'?'selected':''}>Selecione...</option>
+         <option value="reserva" ${x.situacao==='reserva'?'selected':''}>Reserva</option>
+         <option value="1_4" ${x.situacao==='1_4'?'selected':''}>1/4</option>
+         <option value="1_2" ${x.situacao==='1_2'?'selected':''}>1/2</option>
+         <option value="3_4" ${x.situacao==='3_4'?'selected':''}>3/4</option>
+         <option value="cheio" ${x.situacao==='cheio'?'selected':''}>Cheio</option>`
+      : `<option value="pendente" ${x.situacao==='pendente'?'selected':''}>Pendente</option>
+         <option value="ok" ${x.situacao==='ok'?'selected':''}>OK</option>
+         <option value="avaria" ${x.situacao==='avaria'?'selected':''}>Avaria</option>
+         <option value="nao_aplica" ${x.situacao==='nao_aplica'?'selected':''}>Não se aplica</option>`;
+    return `<div class="checkrow" data-id="${x.id}"><b>${esc(x.item)}</b><select class="cs">${options}</select><input class="co" placeholder="Observação" value="${esc(x.observacao||'')}"></div>`;
+  }).join('');
+}
 async function saveChecklist(){for(let row of document.querySelectorAll('.checkrow')){let r=await sb.from('roma_os_checklist').update({situacao:row.querySelector('.cs').value,observacao:row.querySelector('.co').value||null,atualizado_por:me.user_id,updated_at:new Date().toISOString()}).eq('id',row.dataset.id);if(r.error)return msg('modalMsg',r.error.message)}let pending=[...document.querySelectorAll('.cs')].some(x=>x.value==='pendente');if(['administrador','operacional'].includes(me.perfil))await sb.from('roma_os').update({checklist_concluido:!pending}).eq('id',currentOS.id);msg('modalMsg','Checklist salvo.',true)}
 async function loadSession(){
   let r=await sb.from('roma_os_sessoes').select('*').eq('os_id',currentOS.id).eq('user_id',me.user_id).is('fim',null).maybeSingle();
@@ -208,6 +212,34 @@ async function loadSession(){
     ? ('Sessão '+(currentSession.status==='em_execucao'?'em execução':currentSession.status==='pausada'?'pausada':currentSession.status)+' desde '+new Date(currentSession.inicio).toLocaleString('pt-BR'))
     : 'Nenhuma sessão ativa.';
 }
+function fmtDT(v){return v?new Date(v).toLocaleString('pt-BR'):'—'}
+function fmtDuration(h){return Number(h||0).toFixed(2)+' h'}
+async function loadWorkHistory(){
+  const box=$('workHistory');
+  if(!box)return;
+  box.innerHTML='<div class="muted">Carregando...</div>';
+  let sr=await sb.from('roma_os_sessoes').select('*').eq('os_id',currentOS.id).order('inicio',{ascending:true});
+  if(sr.error){box.innerHTML='<div class="muted">Histórico disponível apenas para os registros permitidos ao seu perfil.</div>';return}
+  const sessions=sr.data||[];
+  if(!sessions.length){box.innerHTML='<div class="muted">Nenhum trabalho registrado nesta OS.</div>';return}
+  let pr=await sb.from('roma_os_pausas').select('*').in('sessao_id',sessions.map(s=>s.id)).order('inicio',{ascending:true});
+  const pauses=pr.error?[]:(pr.data||[]);
+  const rows=[];
+  for(const s of sessions){
+    const ps=pauses.filter(p=>String(p.sessao_id)===String(s.id));
+    let pauseSeconds=0;
+    for(const p of ps){
+      const pe=p.fim?new Date(p.fim):new Date();
+      pauseSeconds+=Math.max(0,(pe-new Date(p.inicio))/1000);
+    }
+    const end=s.fim?new Date(s.fim):new Date();
+    const net=Math.max(0,((end-new Date(s.inicio))/1000-pauseSeconds)/3600);
+    const ptxt=ps.length?ps.map(p=>`${fmtDT(p.inicio)} → ${fmtDT(p.fim)}`).join('<br>'):'Sem pausa';
+    rows.push(`<tr><td>${esc(s.colaborador_nome)}</td><td>${fmtDT(s.inicio)}</td><td>${fmtDT(s.fim)}</td><td>${ptxt}</td><td>${fmtDuration(net)}</td><td>${esc(s.status)}</td></tr>`);
+  }
+  box.innerHTML=`<div style="overflow:auto"><table><tr><th>Mecânico</th><th>Início</th><th>Fim</th><th>Pausas</th><th>Horas</th><th>Status</th></tr>${rows.join('')}</table></div>`;
+}
+
 async function rpc(name,args){let r=await sb.rpc(name,args);if(r.error)throw new Error(r.error.message);return r.data}
 async function startWork(){
   const b=$('bStart'); b.disabled=true; msg('workMsg','Iniciando trabalho...');
@@ -253,7 +285,7 @@ async function finishParticipation(){
     msg('workMsg','Não foi possível concluir a participação: '+e.message);
   }
 }
-async function refreshOS(){await loadAll();currentOS=orders.find(o=>String(o.id)===String(currentOS.id));await loadSession();$('mStatus').value=currentOS.status;applyRole()}
+async function refreshOS(){await loadAll();currentOS=orders.find(o=>String(o.id)===String(currentOS.id));await Promise.all([loadSession(),loadWorkHistory()]);$('mStatus').value=currentOS.status;applyRole()}
 function applyRole(){let manage=['administrador','operacional'].includes(me.perfil),closed=['concluido','entregue','cancelado'].includes(currentOS.status);$('mAdminFields').querySelectorAll('input,select,textarea').forEach(x=>x.disabled=!manage||closed);$('participantActions').style.display=manage&&!closed?'flex':'none';$('bSaveService').style.display=!closed&&(me.perfil==='mecanico'||manage)?'inline-block':'none';$('bSave').style.display=manage&&!closed?'inline-block':'none';$('bComplete').style.display=manage&&!closed?'inline-block':'none';$('bDeliver').style.display=manage&&currentOS.status==='concluido'?'inline-block':'none';$('bReopen').style.display=me.perfil==='administrador'&&['concluido','entregue'].includes(currentOS.status)?'inline-block':'none';let canWork=!closed&&(me.perfil==='mecanico'||manage);$('bStart').style.display=canWork&&!currentSession?'inline-block':'none';$('bPause').style.display=canWork&&currentSession?.status==='em_execucao'?'inline-block':'none';$('bResume').style.display=canWork&&currentSession?.status==='pausada'?'inline-block':'none';$('bFinishPart').style.display=canWork&&currentSession?'inline-block':'none'}
 async function saveServiceInfo(){
   const b=$('bSaveService');
