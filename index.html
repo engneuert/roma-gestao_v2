@@ -33,7 +33,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px so
 <label>Data de entrada<input id="fData" type="date"></label><label>Previsão<input id="fPrev" type="date"></label><label class="s2">Responsável principal<select id="fResp"></select></label>
 <label class="s2">Cliente<input id="fCliente"></label><label>Telefone<input id="fTelefone"></label><label>Placa<input id="fPlaca"></label><label class="s2">Veículo / modelo<input id="fVeiculo"></label><label>KM<input id="fKm" type="number"></label><label>Cor<input id="fCor"></label>
 <label>Prioridade<select id="fPrioridade"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></label>
-<label class="s2">Serviço solicitado<input id="fServico"></label><label class="s2">Relato do cliente<textarea id="fRelato"></textarea></label></div><div class="actions"><button class="btn primary" onclick="createOS()">Criar OS</button><button class="btn" onclick="showView('kanban')">Cancelar</button></div><div id="formMsg" class="msg"></div></div></section>
+<label class="s2">Serviço solicitado<input id="fServico"></label><label class="s2">Relato do cliente<textarea id="fRelato"></textarea></label></div><div class="actions"><button class="btn primary" onclick="createOS()">Criar OS</button><button class="btn" onclick="showView(me?.perfil==='mecanico'?'minhas':'kanban')">Cancelar</button></div><div id="formMsg" class="msg"></div></div></section>
 <section id="view-historico" class="view"><h2>Histórico</h2><div class="panel"><div id="history"></div></div></section>
 <section id="view-indicadores" class="view"><h2>Indicadores</h2><div class="kpis"><div class="kpi">Meta da equipe<b id="kMeta">0h</b></div><div class="kpi">Realizado<b id="kReal">0h</b></div><div class="kpi">Atingimento<b id="kPct">0%</b></div><div class="kpi">Faltam<b id="kFalta">0h</b></div></div><div class="panel" style="margin-top:12px"><div id="empIndicators"></div></div></section>
 <section id="view-admin" class="view"><h2>Administração</h2>
@@ -99,7 +99,7 @@ async function boot(){
   }
 }
 function labelProfile(p){return ({administrador:'Administrador Master',operacional:'Operacional',visualizacao:'Visualização',mecanico:'Mecânico'})[p]||p}
-function renderNav(){let a=[];if(me.perfil!=='mecanico')a.push(`<button class="btn" onclick="showView('kanban')">Kanban</button>`);if(['administrador','operacional'].includes(me.perfil))a.push(`<button class="btn primary" onclick="newOS()">+ Nova OS</button>`);if(me.perfil==='mecanico')a.push(`<button class="btn" onclick="showView('minhas')">Minhas OS</button>`);a.push(`<button class="btn" onclick="showView('historico')">Histórico</button><button class="btn" onclick="showView('indicadores')">Indicadores</button>`);if(me.perfil==='administrador')a.push(`<button class="btn" onclick="showView('admin')">Administração</button>`);a.push(`<button class="btn" onclick="logout()">Sair</button>`);$('nav').innerHTML=a.join('')}
+function renderNav(){let a=[];if(me.perfil!=='mecanico')a.push(`<button class="btn" onclick="showView('kanban')">Kanban</button>`);if(['administrador','operacional'].includes(me.perfil))a.push(`<button class="btn primary" onclick="newOS()">+ Nova OS</button>`);if(me.perfil==='mecanico')a.push(`<button class="btn" onclick="showView('minhas')">Minhas OS</button><button class="btn primary" onclick="newOS()">+ Nova OS</button>`);a.push(`<button class="btn" onclick="showView('historico')">Histórico</button><button class="btn" onclick="showView('indicadores')">Indicadores</button>`);if(me.perfil==='administrador')a.push(`<button class="btn" onclick="showView('admin')">Administração</button>`);a.push(`<button class="btn" onclick="logout()">Sair</button>`);$('nav').innerHTML=a.join('')}
 async function login(){
   const email=document.getElementById('loginEmail').value.trim();
   const password=document.getElementById('loginPass').value;
@@ -117,9 +117,78 @@ async function login(){
 async function logout(){await sb.auth.signOut();location.reload()}
 async function loadAll(){let [e,o,p]=await Promise.all([sb.from('roma_colaboradores').select('*').order('ordem'),sb.from('roma_os').select('*').order('numero_os',{ascending:false}),sb.from('roma_os_participantes').select('*')]);if(e.error||o.error||p.error)return alert((e.error||o.error||p.error).message);employees=e.data||[];orders=o.data||[];participants=p.data||[];fillEmployees();renderKanban();renderMinhas()}
 function fillEmployees(){let opts='<option value="">Selecione...</option>'+employees.filter(x=>x.ativo!==false).map(x=>`<option value="${x.id}">${esc(x.nome)}</option>`).join('');$('fResp').innerHTML=opts;$('mResp').innerHTML=opts}
-function newOS(){showView('nova');$('fData').value=today();['fPrev','fCliente','fTelefone','fPlaca','fVeiculo','fKm','fCor','fServico','fRelato'].forEach(x=>$(x).value='');$('fResp').value='';$('fPrioridade').value='5';msg('formMsg','')}
-async function createOS(){let emp=employees.find(x=>String(x.id)===String($('fResp').value));if(!emp)return msg('formMsg','Selecione o responsável.');let payload={data_entrada:$('fData').value,previsao_entrega:$('fPrev').value||null,cliente:$('fCliente').value||null,telefone:$('fTelefone').value||null,placa:$('fPlaca').value.toUpperCase()||null,veiculo:$('fVeiculo').value||null,km:$('fKm').value?Number($('fKm').value):null,cor:$('fCor').value||null,servico_solicitado:$('fServico').value||null,relato_cliente:$('fRelato').value||null,prioridade:Number($('fPrioridade').value),colaborador_id:String(emp.id),colaborador_nome:emp.nome,status:'aguardando'};let r=await sb.from('roma_os').insert(payload).select().single();if(r.error)return msg('formMsg',r.error.message);let pr=await sb.from('roma_os_participantes').insert({os_id:r.data.id,colaborador_id:String(emp.id),colaborador_nome:emp.nome,principal:true});if(pr.error)return msg('formMsg','OS criada, mas participante: '+pr.error.message);await seedChecklist(r.data.id);await loadAll();showView('kanban')}
-const checkItems=['Lataria / amassados','Arranhões / pintura','Para-choques','Rodas / calotas','Pneus / desgaste','Estepe / ferramentas','Vidros / para-brisa','Retrovisores','Faróis / lanternas','Luzes do painel','Interior / bancos','Objetos no veículo','Nível de combustível'];
+function newOS(){
+  showView('nova');
+  $('fData').value=today();
+  ['fPrev','fCliente','fTelefone','fPlaca','fVeiculo','fKm','fCor','fServico','fRelato'].forEach(x=>$(x).value='');
+  $('fPrioridade').value='5';
+  if(me.perfil==='mecanico'){
+    $('fResp').value=String(me.colaborador_id||'');
+    $('fResp').disabled=true;
+  }else{
+    $('fResp').disabled=false;
+    $('fResp').value='';
+  }
+  msg('formMsg','');
+}
+async function createOS(){
+  msg('formMsg','Criando OS...');
+  try{
+    let created;
+    if(me.perfil==='mecanico'){
+      if(!me.colaborador_id)throw new Error('Seu usuário não está vinculado a um colaborador.');
+      created=await rpc('roma_criar_os_mecanico',{
+        p_data_entrada:$('fData').value,
+        p_previsao_entrega:$('fPrev').value||null,
+        p_cliente:$('fCliente').value||null,
+        p_telefone:$('fTelefone').value||null,
+        p_placa:$('fPlaca').value||null,
+        p_veiculo:$('fVeiculo').value||null,
+        p_km:$('fKm').value?Number($('fKm').value):null,
+        p_cor:$('fCor').value||null,
+        p_servico_solicitado:$('fServico').value||null,
+        p_relato_cliente:$('fRelato').value||null,
+        p_prioridade:Number($('fPrioridade').value)
+      });
+      await seedChecklist(created.id);
+      await loadAll();
+      msg('formMsg','OS '+String(created.numero_os).padStart(4,'0')+' criada e atribuída a você.',true);
+      showView('minhas');
+      await openOS(created.id);
+      return;
+    }
+
+    let emp=employees.find(x=>String(x.id)===String($('fResp').value));
+    if(!emp)throw new Error('Selecione o responsável.');
+    let payload={
+      data_entrada:$('fData').value,
+      previsao_entrega:$('fPrev').value||null,
+      cliente:$('fCliente').value||null,
+      telefone:$('fTelefone').value||null,
+      placa:$('fPlaca').value.toUpperCase()||null,
+      veiculo:$('fVeiculo').value||null,
+      km:$('fKm').value?Number($('fKm').value):null,
+      cor:$('fCor').value||null,
+      servico_solicitado:$('fServico').value||null,
+      relato_cliente:$('fRelato').value||null,
+      prioridade:Number($('fPrioridade').value),
+      colaborador_id:String(emp.id),
+      colaborador_nome:emp.nome,
+      status:'aguardando'
+    };
+    let r=await sb.from('roma_os').insert(payload).select().single();
+    if(r.error)throw r.error;
+    let pr=await sb.from('roma_os_participantes').insert({
+      os_id:r.data.id,colaborador_id:String(emp.id),colaborador_nome:emp.nome,principal:true
+    });
+    if(pr.error)throw new Error('OS criada, mas participante: '+pr.error.message);
+    await seedChecklist(r.data.id);
+    await loadAll();
+    showView('kanban');
+  }catch(e){
+    msg('formMsg','Não foi possível criar a OS: '+(e.message||String(e)));
+  }
+}
 async function seedChecklist(id){let ex=await sb.from('roma_os_checklist').select('id').eq('os_id',id).limit(1);if(!ex.data?.length)await sb.from('roma_os_checklist').insert(checkItems.map(item=>({os_id:id,item})))}
 function renderKanban(){let sts=[['aguardando','Aguardando'],['em_execucao','Em execução'],['pausado','Pausado / aguardando'],['concluido','Concluído']];$('kanban').innerHTML=sts.map(([st,n])=>{let a=orders.filter(o=>o.status===st||(st==='em_execucao'&&o.status==='execucao'));return `<div class="col"><h3>${n} <span>${a.length}</span></h3>${a.map(card).join('')||'<div class="muted">Nenhuma OS</div>'}</div>`}).join('')}
 function card(o){return `<div class="card" onclick="openOS(${o.id})"><b>OS ${String(o.numero_os).padStart(4,'0')}</b><div>${esc(o.placa||'Sem placa')} — ${esc(o.veiculo||'')}</div><div class="meta">${esc(o.servico_solicitado||o.relato_cliente||'')}</div><div class="meta">${esc(o.colaborador_nome||'Sem responsável')} · Entrada ${br(o.data_entrada)}</div></div>`}
