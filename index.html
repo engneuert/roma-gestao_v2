@@ -36,7 +36,22 @@ table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px so
 <label class="s2">Serviço solicitado<input id="fServico"></label><label class="s2">Relato do cliente<textarea id="fRelato"></textarea></label></div><div class="actions"><button class="btn primary" onclick="createOS()">Criar OS</button><button class="btn" onclick="showView('kanban')">Cancelar</button></div><div id="formMsg" class="msg"></div></div></section>
 <section id="view-historico" class="view"><h2>Histórico</h2><div class="panel"><div id="history"></div></div></section>
 <section id="view-indicadores" class="view"><h2>Indicadores</h2><div class="kpis"><div class="kpi">Meta da equipe<b id="kMeta">0h</b></div><div class="kpi">Realizado<b id="kReal">0h</b></div><div class="kpi">Atingimento<b id="kPct">0%</b></div><div class="kpi">Faltam<b id="kFalta">0h</b></div></div><div class="panel" style="margin-top:12px"><div id="empIndicators"></div></div></section>
-<section id="view-admin" class="view"><h2>Administração</h2><div class="panel"><h3>Usuários e vínculos</h3><div class="muted">O mecânico deve estar vinculado ao colaborador correspondente.</div><div id="usersAdmin"></div></div></section>
+<section id="view-admin" class="view"><h2>Administração</h2>
+<div class="panel"><h3>Colaboradores e metas</h3><div class="grid">
+<label class="s2">Novo colaborador<input id="newEmpName"></label>
+<label>Meta mensal (h)<input id="newEmpGoal" type="number" value="120" min="0" step="0.5"></label>
+<div style="align-self:end"><button class="btn primary" onclick="addEmployee()">Adicionar</button></div>
+</div><div id="adminEmployees" style="margin-top:14px"></div></div>
+<div class="panel"><h3>Criar usuário</h3><div class="muted">O Administrador Master pode criar os acessos da equipe. Para Mecânico, o vínculo com um colaborador é obrigatório.</div>
+<div class="grid" style="margin-top:12px">
+<label class="s2">Nome<input id="newUserName" autocomplete="off"></label>
+<label class="s2">E-mail<input id="newUserEmail" type="email" autocomplete="off"></label>
+<label>Senha inicial<input id="newUserPass" type="password" minlength="6" autocomplete="new-password"></label>
+<label>Perfil<select id="newUserRole" onchange="toggleNewUserLink()"><option value="operacional">Operacional</option><option value="visualizacao">Visualização</option><option value="mecanico">Mecânico</option></select></label>
+<label class="s2" id="newUserColWrap" style="display:none">Vincular ao colaborador<select id="newUserCol"></select></label>
+</div><div class="actions"><button class="btn primary" onclick="createSystemUser()">Criar usuário</button></div><div id="userCreateMsg" class="msg"></div></div>
+<div class="panel"><h3>Usuários e permissões</h3><div id="usersAdmin"></div></div>
+</section>
 </main></div>
 
 <div id="osModal" class="modal"><div class="box"><div class="head"><div><h2 id="mTitle"></h2><div id="mSub" class="muted"></div></div><button class="btn" onclick="closeModal()">Fechar</button></div>
@@ -131,8 +146,122 @@ async function uploadPhoto(){let f=$('photoFile').files[0];if(!f)return msg('mod
 async function loadPhotos(){let r=await sb.from('roma_os_fotos').select('*').eq('os_id',currentOS.id).order('created_at');let out=[];for(let x of r.data||[]){let u=await sb.storage.from('roma-os-fotos').createSignedUrl(x.storage_path,3600);out.push(`<div class="photo"><img src="${u.data?.signedUrl||''}"><div class="meta">${esc(x.etapa)} · ${esc(x.legenda||'')}</div></div>`)}$('photos').innerHTML=out.join('')||'<div class="muted">Sem fotos.</div>'}
 function renderHistory(){let a=orders.filter(o=>['concluido','entregue','cancelado'].includes(o.status));$('history').innerHTML=`<table><tr><th>OS</th><th>Cliente</th><th>Veículo</th><th>Status</th><th>Horas</th></tr>${a.map(o=>`<tr onclick="openOS(${o.id})" style="cursor:pointer"><td>${String(o.numero_os).padStart(4,'0')}</td><td>${esc(o.cliente||'')}</td><td>${esc(o.placa||'')} ${esc(o.veiculo||'')}</td><td>${o.status}</td><td>${Number(o.horas||0).toFixed(2)}h</td></tr>`).join('')}</table>`}
 async function loadIndicators(){let r=await sb.from('roma_lancamentos').select('*'),rows=r.data||[],active=employees.filter(e=>e.ativo!==false),meta=active.reduce((n,e)=>n+Number(e.meta_mensal||120),0),real=rows.reduce((n,x)=>n+Number(x.horas||0),0);$('kMeta').textContent=meta.toFixed(0)+'h';$('kReal').textContent=real.toFixed(1)+'h';$('kPct').textContent=(meta?real/meta*100:0).toFixed(1)+'%';$('kFalta').textContent=Math.max(0,meta-real).toFixed(1)+'h';$('empIndicators').innerHTML=active.map(e=>{let h=rows.filter(x=>x.colaborador===e.nome).reduce((n,x)=>n+Number(x.horas||0),0);return `<div class="part"><b style="flex:1">${esc(e.nome)}</b><span>${h.toFixed(1)} / ${Number(e.meta_mensal||120).toFixed(0)} h</span></div>`}).join('')}
-async function loadAdmin(){if(me.perfil!=='administrador')return;let r=await sb.from('roma_usuarios').select('*').order('nome');users=r.data||[];$('usersAdmin').innerHTML=users.map(u=>`<div class="panel"><b>${esc(u.nome||u.email)}</b><div class="grid" style="margin-top:8px"><label>Perfil<select id="prof_${u.user_id}" ${u.perfil==='administrador'?'disabled':''}><option value="operacional" ${u.perfil==='operacional'?'selected':''}>Operacional</option><option value="visualizacao" ${u.perfil==='visualizacao'?'selected':''}>Visualização</option><option value="mecanico" ${u.perfil==='mecanico'?'selected':''}>Mecânico</option></select></label><label>Colaborador<select id="col_${u.user_id}" ${u.perfil==='administrador'?'disabled':''}><option value="">Sem vínculo</option>${employees.map(e=>`<option value="${e.id}" ${String(e.id)===String(u.colaborador_id)?'selected':''}>${esc(e.nome)}</option>`).join('')}</select></label></div>${u.perfil==='administrador'?'':`<div class="actions"><button class="btn" onclick="saveUser('${u.user_id}')">Salvar</button></div>`}</div>`).join('')}
-async function saveUser(id){let r=await sb.from('roma_usuarios').update({perfil:$('prof_'+id).value,colaborador_id:$('col_'+id).value||null}).eq('user_id',id);if(r.error)return alert(r.error.message);await loadAdmin()}
+async function loadAdmin(){
+  if(me.perfil!=='administrador')return;
+  let r=await sb.from('roma_usuarios').select('*').order('nome');
+  if(r.error)return alert(r.error.message);
+  users=r.data||[];
+  renderAdminEmployees();
+  renderAdminUsers();
+  fillNewUserEmployees();
+}
+function renderAdminEmployees(){
+  $('adminEmployees').innerHTML=employees.map(e=>`<div class="grid" style="margin:8px 0">
+    <label class="s2">Nome<input id="en_${e.id}" value="${esc(e.nome)}"></label>
+    <label>Meta mensal (h)<input id="eg_${e.id}" type="number" min="0" step="0.5" value="${Number(e.meta_mensal||120)}"></label>
+    <div style="align-self:end"><button class="btn" onclick="saveEmployee('${e.id}')">Salvar</button>
+    <button class="btn ${e.ativo===false?'ok':'danger'}" onclick="toggleEmployee('${e.id}',${e.ativo===false})">${e.ativo===false?'Reativar':'Inativar'}</button></div>
+  </div>`).join('')||'<div class="muted">Nenhum colaborador.</div>';
+}
+async function addEmployee(){
+  let nome=$('newEmpName').value.trim(),meta=Number($('newEmpGoal').value||120);
+  if(!nome)return alert('Informe o nome.');
+  let max=Math.max(0,...employees.map(e=>Number(e.ordem||0)));
+  let r=await sb.from('roma_colaboradores').insert({nome,meta_mensal:meta,ativo:true,ordem:max+1});
+  if(r.error)return alert(r.error.message);
+  $('newEmpName').value='';await loadAll();await loadAdmin();
+}
+async function saveEmployee(id){
+  let old=employees.find(e=>String(e.id)===String(id)),nome=$('en_'+id).value.trim(),meta=Number($('eg_'+id).value||120);
+  if(!nome)return alert('Informe o nome.');
+  if(old.nome!==nome){
+    let used=users.some(u=>String(u.colaborador_id)===String(id));
+    if(used&&!confirm('Este colaborador possui usuário vinculado. Deseja alterar o nome mesmo assim?'))return;
+    let r=await sb.from('roma_lancamentos').update({colaborador:nome}).eq('colaborador',old.nome);if(r.error)return alert(r.error.message);
+    await sb.from('roma_os_participantes').update({colaborador_nome:nome}).eq('colaborador_id',String(id));
+    await sb.from('roma_os').update({colaborador_nome:nome}).eq('colaborador_id',String(id));
+  }
+  let q=await sb.from('roma_colaboradores').update({nome,meta_mensal:meta}).eq('id',id);if(q.error)return alert(q.error.message);
+  await loadAll();await loadAdmin();
+}
+async function toggleEmployee(id,activate){
+  if(!activate && users.some(u=>u.ativo&&String(u.colaborador_id)===String(id))){
+    return alert('Este colaborador possui um usuário ativo vinculado. Inative ou desvincule o usuário primeiro.');
+  }
+  let q=await sb.from('roma_colaboradores').update({ativo:activate}).eq('id',id);if(q.error)return alert(q.error.message);
+  await loadAll();await loadAdmin();
+}
+function fillNewUserEmployees(){
+  let used=new Set(users.filter(u=>u.ativo&&u.perfil==='mecanico'&&u.colaborador_id).map(u=>String(u.colaborador_id)));
+  $('newUserCol').innerHTML='<option value="">Selecione...</option>'+employees.filter(e=>e.ativo!==false&&!used.has(String(e.id))).map(e=>`<option value="${e.id}">${esc(e.nome)}</option>`).join('');
+}
+function toggleNewUserLink(){
+  $('newUserColWrap').style.display=$('newUserRole').value==='mecanico'?'block':'none';
+}
+function renderAdminUsers(){
+  $('usersAdmin').innerHTML=users.map(u=>{
+    const master=u.perfil==='administrador';
+    const linked=employees.find(e=>String(e.id)===String(u.colaborador_id));
+    const role=master
+      ? '<input value="Administrador Master" disabled>'
+      : `<select id="prof_${u.user_id}" onchange="toggleUserLink('${u.user_id}')">
+          <option value="operacional" ${u.perfil==='operacional'?'selected':''}>Operacional</option>
+          <option value="visualizacao" ${u.perfil==='visualizacao'?'selected':''}>Visualização</option>
+          <option value="mecanico" ${u.perfil==='mecanico'?'selected':''}>Mecânico</option>
+        </select>`;
+    const col=master
+      ? '<input value="Sem vínculo — Master protegido" disabled>'
+      : `<select id="col_${u.user_id}" ${u.perfil==='mecanico'?'':'disabled'}>
+          <option value="">Sem vínculo</option>
+          ${employees.map(e=>`<option value="${e.id}" ${String(e.id)===String(u.colaborador_id)?'selected':''}>${esc(e.nome)}</option>`).join('')}
+        </select>`;
+    const actions=master
+      ? '<span class="pill">Master protegido</span>'
+      : `<button class="btn" onclick="saveUser('${u.user_id}')">Salvar</button>
+         <button class="btn ${u.ativo?'danger':'ok'}" onclick="toggleUser('${u.user_id}',${!u.ativo})">${u.ativo?'Inativar':'Reativar'}</button>`;
+    return `<div class="panel">
+      <div class="head"><div><b>${esc(u.nome||u.email||u.user_id)}</b><div class="meta">${esc(u.email||'')} · ${u.ativo?'Ativo':'Inativo'}</div></div>${master?'<span class="pill">Administrador Master</span>':''}</div>
+      <div class="grid" style="margin-top:9px"><label>Perfil${role}</label><label class="s2">Colaborador${col}</label><div style="align-self:end">${actions}</div></div>
+      ${linked&&u.perfil==='mecanico'?`<div class="meta">Vinculado a ${esc(linked.nome)}</div>`:''}
+    </div>`;
+  }).join('')||'<div class="muted">Nenhum usuário.</div>';
+}
+function toggleUserLink(id){
+  let el=$('prof_'+id),col=$('col_'+id);
+  col.disabled=el.value!=='mecanico';
+  if(el.value!=='mecanico')col.value='';
+}
+async function createSystemUser(){
+  const nome=$('newUserName').value.trim(),email=$('newUserEmail').value.trim().toLowerCase(),password=$('newUserPass').value,perfil=$('newUserRole').value,colaborador_id=$('newUserCol').value||null;
+  if(!nome||!email||password.length<6)return msg('userCreateMsg','Informe nome, e-mail e senha com pelo menos 6 caracteres.');
+  if(perfil==='mecanico'&&!colaborador_id)return msg('userCreateMsg','Selecione o colaborador que corresponde a este mecânico.');
+  if(perfil==='mecanico'&&users.some(u=>u.ativo&&u.perfil==='mecanico'&&String(u.colaborador_id)===String(colaborador_id)))return msg('userCreateMsg','Este colaborador já possui um login mecânico ativo.');
+  msg('userCreateMsg','Criando usuário...');
+  // A Edge Function existente da V1 cria Auth + roma_usuarios. Para manter compatibilidade,
+  // cria inicialmente como Operacional quando o destino é Mecânico e depois aplica o vínculo V2.
+  const createRole=perfil==='mecanico'?'operacional':perfil;
+  const r=await sb.functions.invoke('roma-admin-users',{body:{action:'create',nome,email,password,perfil:createRole}});
+  if(r.error)return msg('userCreateMsg','Erro: '+r.error.message);
+  if(r.data?.error)return msg('userCreateMsg','Erro: '+r.data.error);
+  if(perfil==='mecanico'){
+    const upd=await sb.from('roma_usuarios').update({perfil:'mecanico',colaborador_id:String(colaborador_id)}).eq('email',email);
+    if(upd.error)return msg('userCreateMsg','Usuário criado, mas falhou o vínculo mecânico: '+upd.error.message);
+  }
+  $('newUserName').value='';$('newUserEmail').value='';$('newUserPass').value='';$('newUserRole').value='operacional';$('newUserCol').value='';toggleNewUserLink();
+  msg('userCreateMsg','Usuário criado com sucesso.',true);await loadAdmin();
+}
+async function saveUser(id){
+  let alvo=users.find(u=>String(u.user_id)===String(id));if(alvo?.perfil==='administrador')return alert('O Administrador Master é protegido.');
+  let perfil=$('prof_'+id).value,colaborador_id=$('col_'+id).value||null;
+  if(perfil==='mecanico'&&!colaborador_id)return alert('Mecânico precisa estar vinculado a um colaborador.');
+  if(perfil==='mecanico'&&users.some(u=>u.ativo&&u.perfil==='mecanico'&&u.user_id!==id&&String(u.colaborador_id)===String(colaborador_id)))return alert('Este colaborador já possui outro login mecânico ativo.');
+  let r=await sb.from('roma_usuarios').update({perfil,colaborador_id:perfil==='mecanico'?String(colaborador_id):null}).eq('user_id',id);
+  if(r.error)return alert(r.error.message);await loadAdmin();
+}
+async function toggleUser(id,ativo){
+  let alvo=users.find(u=>String(u.user_id)===String(id));if(alvo?.perfil==='administrador')return alert('O Administrador Master não pode ser inativado.');
+  let r=await sb.from('roma_usuarios').update({ativo}).eq('user_id',id);if(r.error)return alert(r.error.message);await loadAdmin();
+}
 document.getElementById('loginButton').addEventListener('click',login);
 document.getElementById('loginPass').addEventListener('keydown',function(e){if(e.key==='Enter')login();});
 boot();
