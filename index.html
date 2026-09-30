@@ -189,6 +189,7 @@ async function createOS(){
     msg('formMsg','Não foi possível criar a OS: '+(e.message||String(e)));
   }
 }
+const checkItems=['Lataria / amassados','Arranhões / pintura','Para-choques','Rodas / calotas','Pneus / desgaste','Estepe / ferramentas','Vidros / para-brisa','Retrovisores','Faróis / lanternas','Luzes do painel','Interior / bancos','Objetos no veículo','Nível de combustível'];
 async function seedChecklist(id){let ex=await sb.from('roma_os_checklist').select('id').eq('os_id',id).limit(1);if(!ex.data?.length)await sb.from('roma_os_checklist').insert(checkItems.map(item=>({os_id:id,item})))}
 function renderKanban(){let sts=[['aguardando','Aguardando'],['em_execucao','Em execução'],['pausado','Pausado / aguardando'],['concluido','Concluído']];$('kanban').innerHTML=sts.map(([st,n])=>{let a=orders.filter(o=>o.status===st||(st==='em_execucao'&&o.status==='execucao'));return `<div class="col"><h3>${n} <span>${a.length}</span></h3>${a.map(card).join('')||'<div class="muted">Nenhuma OS</div>'}</div>`}).join('')}
 function card(o){return `<div class="card" onclick="openOS(${o.id})"><b>OS ${String(o.numero_os).padStart(4,'0')}</b><div>${esc(o.placa||'Sem placa')} — ${esc(o.veiculo||'')}</div><div class="meta">${esc(o.servico_solicitado||o.relato_cliente||'')}</div><div class="meta">${esc(o.colaborador_nome||'Sem responsável')} · Entrada ${br(o.data_entrada)}</div></div>`}
