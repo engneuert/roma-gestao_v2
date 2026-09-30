@@ -58,7 +58,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px so
 <div id="mAdminFields" class="panel"><div class="grid"><label>Responsável<select id="mResp"></select></label><label>Status<input id="mStatus" disabled></label><label>Data<input id="mData" type="date"></label><label>Previsão<input id="mPrev" type="date"></label><label class="s2">Cliente<input id="mCliente"></label><label>Telefone<input id="mTelefone"></label><label>Placa<input id="mPlaca"></label><label class="s2">Veículo<input id="mVeiculo"></label><label>KM<input id="mKm" type="number"></label><label>Cor<input id="mCor"></label><label class="s2">Serviço solicitado<input id="mServico"></label><label class="s2">Relato<textarea id="mRelato"></textarea></label></div></div>
 <div class="panel"><h3>Participantes</h3><div id="participants"></div><div id="participantActions" class="actions"><button class="btn" onclick="saveParticipants()">Salvar participantes</button></div></div>
 <div class="panel"><h3>Checklist digital de entrada</h3><div id="checklist"></div><div class="actions"><button class="btn" onclick="saveChecklist()">Salvar checklist</button></div></div>
-<div class="panel"><h3>Trabalho</h3><div id="workState" class="muted"></div><div class="actions"><button id="bStart" class="btn ok" onclick="startWork()">Iniciar trabalho</button><button id="bPause" class="btn amber" onclick="pauseWork()">Pausar</button><button id="bResume" class="btn ok" onclick="resumeWork()">Retomar</button><button id="bFinishPart" class="btn primary" onclick="finishParticipation()">Concluir minha participação</button></div></div>
+<div class="panel"><h3>Trabalho</h3><div id="workState" class="muted"></div><div class="actions"><button id="bStart" class="btn ok" onclick="startWork()">Iniciar trabalho</button><button id="bPause" class="btn amber" onclick="pauseWork()">Pausar</button><button id="bResume" class="btn ok" onclick="resumeWork()">Retomar</button><button id="bFinishPart" class="btn primary" onclick="finishParticipation()">Concluir minha participação</button></div><div id="workMsg" class="msg"></div></div>
 <div class="panel"><h3>Fotos</h3><div class="grid"><label>Etapa<select id="photoStage"><option value="entrada">Entrada</option><option value="execucao" selected>Execução</option><option value="saida">Saída</option></select></label><label class="s2">Foto<input id="photoFile" type="file" accept="image/*" capture="environment"></label><label>Legenda<input id="photoCaption"></label></div><div class="actions"><button class="btn" onclick="uploadPhoto()">Enviar foto</button></div><div id="photos" class="photoGrid" style="margin-top:12px"></div></div>
 <div class="panel"><h3>Encerramento</h3><div class="grid"><label class="s2">Peças utilizadas<textarea id="mPecas"></textarea></label><label>Serviços de terceiros<input id="mTerceiros"></label><label>Pendências<input id="mPendencias"></label><label class="s2">Serviços realizados<textarea id="mRealizados"></textarea></label><label class="s2">Recomendações ao cliente<textarea id="mRecomendacoes"></textarea></label><label class="s4">Observações finais<textarea id="mObs"></textarea></label></div>
 <div class="actions"><button id="bSave" class="btn" onclick="saveOS()">Salvar OS</button><button id="bComplete" class="btn ok" onclick="completeOS()">Concluir OS</button><button id="bDeliver" class="btn ok" onclick="deliverOS()">Marcar entregue</button><button id="bReopen" class="btn danger" onclick="reopenOS()">Reabrir OS</button></div><div id="modalMsg" class="msg"></div></div>
@@ -130,12 +130,59 @@ async function loadParticipants(){let r=await sb.from('roma_os_participantes').s
 async function saveParticipants(){if(!['administrador','operacional'].includes(me.perfil))return;let ids=[...document.querySelectorAll('.pc:checked')].map(x=>x.value),principal=String($('mResp').value);if(!ids.includes(principal))ids.push(principal);let del=await sb.from('roma_os_participantes').delete().eq('os_id',currentOS.id);if(del.error)return msg('modalMsg',del.error.message);let rows=ids.map(id=>{let e=employees.find(x=>String(x.id)===String(id));return {os_id:currentOS.id,colaborador_id:String(id),colaborador_nome:e.nome,principal:String(id)===principal}});let r=await sb.from('roma_os_participantes').insert(rows);if(r.error)return msg('modalMsg',r.error.message);await loadAll();msg('modalMsg','Participantes salvos.',true)}
 async function loadChecklist(){await seedChecklist(currentOS.id);let r=await sb.from('roma_os_checklist').select('*').eq('os_id',currentOS.id).order('id');$('checklist').innerHTML=(r.data||[]).map(x=>`<div class="checkrow" data-id="${x.id}"><b>${esc(x.item)}</b><select class="cs"><option value="pendente" ${x.situacao==='pendente'?'selected':''}>Pendente</option><option value="ok" ${x.situacao==='ok'?'selected':''}>OK</option><option value="avaria" ${x.situacao==='avaria'?'selected':''}>Avaria</option><option value="nao_aplica" ${x.situacao==='nao_aplica'?'selected':''}>Não se aplica</option></select><input class="co" placeholder="Observação" value="${esc(x.observacao||'')}"></div>`).join('')}
 async function saveChecklist(){for(let row of document.querySelectorAll('.checkrow')){let r=await sb.from('roma_os_checklist').update({situacao:row.querySelector('.cs').value,observacao:row.querySelector('.co').value||null,atualizado_por:me.user_id,updated_at:new Date().toISOString()}).eq('id',row.dataset.id);if(r.error)return msg('modalMsg',r.error.message)}let pending=[...document.querySelectorAll('.cs')].some(x=>x.value==='pendente');if(['administrador','operacional'].includes(me.perfil))await sb.from('roma_os').update({checklist_concluido:!pending}).eq('id',currentOS.id);msg('modalMsg','Checklist salvo.',true)}
-async function loadSession(){let r=await sb.from('roma_os_sessoes').select('*').eq('os_id',currentOS.id).eq('user_id',me.user_id).is('fim',null).maybeSingle();currentSession=r.data||null;$('workState').textContent=currentSession?('Sessão '+currentSession.status+' desde '+new Date(currentSession.inicio).toLocaleString('pt-BR')):'Nenhuma sessão ativa.'}
+async function loadSession(){
+  let r=await sb.from('roma_os_sessoes').select('*').eq('os_id',currentOS.id).eq('user_id',me.user_id).is('fim',null).maybeSingle();
+  if(r.error){currentSession=null;$('workState').textContent='Não foi possível consultar a sessão.';msg('workMsg',r.error.message);return}
+  currentSession=r.data||null;
+  $('workState').textContent=currentSession
+    ? ('Sessão '+(currentSession.status==='em_execucao'?'em execução':currentSession.status==='pausada'?'pausada':currentSession.status)+' desde '+new Date(currentSession.inicio).toLocaleString('pt-BR'))
+    : 'Nenhuma sessão ativa.';
+}
 async function rpc(name,args){let r=await sb.rpc(name,args);if(r.error)throw new Error(r.error.message);return r.data}
-async function startWork(){try{await rpc('roma_iniciar_trabalho',{p_os_id:currentOS.id});await refreshOS()}catch(e){msg('modalMsg',e.message)}}
-async function pauseWork(){try{await rpc('roma_pausar_trabalho',{p_sessao_id:currentSession.id});await refreshOS()}catch(e){msg('modalMsg',e.message)}}
-async function resumeWork(){try{await rpc('roma_retomar_trabalho',{p_sessao_id:currentSession.id});await refreshOS()}catch(e){msg('modalMsg',e.message)}}
-async function finishParticipation(){try{let at=prompt('Descreva resumidamente o serviço/atividade realizada:')||currentOS.servico_solicitado||'';await rpc('roma_concluir_participacao',{p_sessao_id:currentSession.id,p_atividade:at});await refreshOS();msg('modalMsg','Sua participação foi concluída e as horas foram calculadas automaticamente.',true)}catch(e){msg('modalMsg',e.message)}}
+async function startWork(){
+  const b=$('bStart'); b.disabled=true; msg('workMsg','Iniciando trabalho...');
+  try{
+    await rpc('roma_iniciar_trabalho',{p_os_id:currentOS.id});
+    await refreshOS();
+    msg('workMsg','Trabalho iniciado. O horário foi registrado pelo sistema.',true);
+  }catch(e){
+    msg('workMsg','Não foi possível iniciar: '+e.message);
+  }finally{b.disabled=false}
+}
+async function pauseWork(){
+  const b=$('bPause'); b.disabled=true; msg('workMsg','Pausando...');
+  try{
+    if(!currentSession)throw new Error('Nenhuma sessão ativa encontrada.');
+    await rpc('roma_pausar_trabalho',{p_sessao_id:currentSession.id});
+    await refreshOS();
+    msg('workMsg','Trabalho pausado. O período de pausa não contará como hora produtiva.',true);
+  }catch(e){
+    msg('workMsg','Não foi possível pausar: '+e.message);
+  }finally{b.disabled=false}
+}
+async function resumeWork(){
+  const b=$('bResume'); b.disabled=true; msg('workMsg','Retomando...');
+  try{
+    if(!currentSession)throw new Error('Nenhuma sessão pausada encontrada.');
+    await rpc('roma_retomar_trabalho',{p_sessao_id:currentSession.id});
+    await refreshOS();
+    msg('workMsg','Trabalho retomado.',true);
+  }catch(e){
+    msg('workMsg','Não foi possível retomar: '+e.message);
+  }finally{b.disabled=false}
+}
+async function finishParticipation(){
+  try{
+    if(!currentSession)throw new Error('Nenhuma sessão aberta encontrada.');
+    let at=prompt('Descreva resumidamente o serviço/atividade realizada:')||currentOS.servico_solicitado||'';
+    msg('workMsg','Concluindo sua participação...');
+    let result=await rpc('roma_concluir_participacao',{p_sessao_id:currentSession.id,p_atividade:at});
+    await refreshOS();
+    msg('workMsg','Participação concluída. Horas produtivas calculadas: '+Number(result?.horas||0).toFixed(2)+' h.',true);
+  }catch(e){
+    msg('workMsg','Não foi possível concluir a participação: '+e.message);
+  }
+}
 async function refreshOS(){await loadAll();currentOS=orders.find(o=>String(o.id)===String(currentOS.id));await loadSession();$('mStatus').value=currentOS.status;applyRole()}
 function applyRole(){let manage=['administrador','operacional'].includes(me.perfil),closed=['concluido','entregue','cancelado'].includes(currentOS.status);$('mAdminFields').querySelectorAll('input,select,textarea').forEach(x=>x.disabled=!manage||closed);$('participantActions').style.display=manage&&!closed?'flex':'none';$('bSave').style.display=manage&&!closed?'inline-block':'none';$('bComplete').style.display=manage&&!closed?'inline-block':'none';$('bDeliver').style.display=manage&&currentOS.status==='concluido'?'inline-block':'none';$('bReopen').style.display=me.perfil==='administrador'&&['concluido','entregue'].includes(currentOS.status)?'inline-block':'none';let canWork=!closed&&(me.perfil==='mecanico'||manage);$('bStart').style.display=canWork&&!currentSession?'inline-block':'none';$('bPause').style.display=canWork&&currentSession?.status==='em_execucao'?'inline-block':'none';$('bResume').style.display=canWork&&currentSession?.status==='pausada'?'inline-block':'none';$('bFinishPart').style.display=canWork&&currentSession?'inline-block':'none'}
 async function saveOS(){let emp=employees.find(e=>String(e.id)===String($('mResp').value));let p={colaborador_id:String(emp.id),colaborador_nome:emp.nome,data_entrada:$('mData').value,previsao_entrega:$('mPrev').value||null,cliente:$('mCliente').value||null,telefone:$('mTelefone').value||null,placa:$('mPlaca').value.toUpperCase()||null,veiculo:$('mVeiculo').value||null,km:$('mKm').value?Number($('mKm').value):null,cor:$('mCor').value||null,servico_solicitado:$('mServico').value||null,relato_cliente:$('mRelato').value||null,pecas_utilizadas:$('mPecas').value||null,terceiros:$('mTerceiros').value||null,pendencias:$('mPendencias').value||null,servicos_realizados:$('mRealizados').value||null,recomendacoes_cliente:$('mRecomendacoes').value||null,observacao:$('mObs').value||null};let r=await sb.from('roma_os').update(p).eq('id',currentOS.id);if(r.error)return msg('modalMsg',r.error.message);await saveParticipants();await loadAll();msg('modalMsg','OS salva.',true)}
