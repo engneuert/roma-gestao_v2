@@ -314,7 +314,39 @@ async function saveOS(){let emp=employees.find(e=>String(e.id)===String($('mResp
 async function completeOS(){try{await saveOS();await rpc('roma_concluir_os',{p_os_id:currentOS.id});await loadAll();closeModal();showView('kanban')}catch(e){msg('modalMsg',e.message)}}
 async function deliverOS(){try{await rpc('roma_entregar_os',{p_os_id:currentOS.id});await loadAll();closeModal();showView('kanban')}catch(e){msg('modalMsg',e.message)}}
 async function reopenOS(){let motivo=prompt('Motivo da reabertura:');if(motivo===null)return;try{await rpc('roma_reabrir_os',{p_os_id:currentOS.id,p_motivo:motivo});await loadAll();await openOS(currentOS.id);msg('modalMsg','OS reaberta. Os indicadores anteriores desta OS foram revertidos.',true)}catch(e){msg('modalMsg',e.message)}}
-async function uploadPhoto(){let f=$('photoFile').files[0];if(!f)return msg('modalMsg','Selecione uma foto.');let ext=(f.name.split('.').pop()||'jpg').toLowerCase(),path=`${me.user_id}/${currentOS.id}/${Date.now()}.${ext}`;let up=await sb.storage.from('roma-os-fotos').upload(path,f);if(up.error)return msg('modalMsg',up.error.message);let r=await sb.from('roma_os_fotos').insert({os_id:currentOS.id,user_id:me.user_id,colaborador_id:me.colaborador_id||null,etapa:$('photoStage').value,storage_path:path,legenda:$('photoCaption').value||null});if(r.error)return msg('modalMsg',r.error.message);$('photoFile').value='';$('photoCaption').value='';await loadPhotos();msg('modalMsg','Foto enviada.',true)}
+async function compressPhoto(file){
+  const MAX_SIDE=1600, QUALITY=0.78;
+  if(!file.type.startsWith('image/'))throw new Error('O arquivo selecionado não é uma imagem.');
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(new Error('Não foi possível ler a imagem.'));i.src=url});
+    let w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+    const scale=Math.min(1,MAX_SIDE/Math.max(w,h));
+    w=Math.max(1,Math.round(w*scale));h=Math.max(1,Math.round(h*scale));
+    const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+    const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0,w,h);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',QUALITY));
+    if(!blob)throw new Error('Não foi possível comprimir a foto.');
+    return blob;
+  }finally{URL.revokeObjectURL(url)}
+}
+async function uploadPhoto(){
+  let f=$('photoFile').files[0];if(!f)return msg('modalMsg','Selecione uma foto.');
+  msg('modalMsg','Otimizando foto...');
+  try{
+    const originalMB=(f.size/1024/1024).toFixed(1);
+    const compressed=await compressPhoto(f);
+    const finalKB=Math.round(compressed.size/1024);
+    const path=`${me.user_id}/${currentOS.id}/${Date.now()}.jpg`;
+    msg('modalMsg','Enviando foto otimizada...');
+    let up=await sb.storage.from('roma-os-fotos').upload(path,compressed,{contentType:'image/jpeg',cacheControl:'3600',upsert:false});
+    if(up.error)throw new Error(up.error.message);
+    let r=await sb.from('roma_os_fotos').insert({os_id:currentOS.id,user_id:me.user_id,colaborador_id:me.colaborador_id||null,etapa:$('photoStage').value,storage_path:path,legenda:$('photoCaption').value||null});
+    if(r.error){await sb.storage.from('roma-os-fotos').remove([path]);throw new Error(r.error.message)}
+    $('photoFile').value='';$('photoCaption').value='';await loadPhotos();
+    msg('modalMsg',`Foto enviada e otimizada (${originalMB} MB → ${finalKB} KB).`,true);
+  }catch(e){msg('modalMsg','Não foi possível enviar a foto: '+e.message)}
+}
 async function loadPhotos(){let r=await sb.from('roma_os_fotos').select('*').eq('os_id',currentOS.id).order('created_at');let out=[];for(let x of r.data||[]){let u=await sb.storage.from('roma-os-fotos').createSignedUrl(x.storage_path,3600);out.push(`<div class="photo"><img src="${u.data?.signedUrl||''}"><div class="meta">${esc(x.etapa)} · ${esc(x.legenda||'')}</div></div>`)}$('photos').innerHTML=out.join('')||'<div class="muted">Sem fotos.</div>'}
 function renderHistory(){let a=orders.filter(o=>['concluido','entregue','cancelado'].includes(o.status));$('history').innerHTML=`<table><tr><th>OS</th><th>Cliente</th><th>Veículo</th><th>Status</th><th>Horas</th></tr>${a.map(o=>`<tr onclick="openOS(${o.id})" style="cursor:pointer"><td>${String(o.numero_os).padStart(4,'0')}</td><td>${esc(o.cliente||'')}</td><td>${esc(o.placa||'')} ${esc(o.veiculo||'')}</td><td>${o.status}</td><td>${Number(o.horas||0).toFixed(2)}h</td></tr>`).join('')}</table>`}
 async function loadIndicators(){let r=await sb.from('roma_lancamentos').select('*'),rows=r.data||[],active=employees.filter(e=>e.ativo!==false),meta=active.reduce((n,e)=>n+Number(e.meta_mensal||120),0),real=rows.reduce((n,x)=>n+Number(x.horas||0),0);$('kMeta').textContent=meta.toFixed(0)+'h';$('kReal').textContent=real.toFixed(1)+'h';$('kPct').textContent=(meta?real/meta*100:0).toFixed(1)+'%';$('kFalta').textContent=Math.max(0,meta-real).toFixed(1)+'h';$('empIndicators').innerHTML=active.map(e=>{let h=rows.filter(x=>x.colaborador===e.nome).reduce((n,x)=>n+Number(x.horas||0),0);return `<div class="part"><b style="flex:1">${esc(e.nome)}</b><span>${h.toFixed(1)} / ${Number(e.meta_mensal||120).toFixed(0)} h</span></div>`}).join('')}
